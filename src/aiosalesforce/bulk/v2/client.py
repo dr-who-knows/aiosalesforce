@@ -2,12 +2,13 @@ import dataclasses
 import logging
 
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Iterable
 
 if TYPE_CHECKING:
     from aiosalesforce.client import Salesforce
 
 from .ingest import BulkIngestClient, JobInfo, OperationType
+from .query import BulkQueryClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,11 @@ class BulkClientV2:
     def ingest(self) -> BulkIngestClient:
         """Manage ingest jobs at a low level."""
         return BulkIngestClient(self)
+
+    @cached_property
+    def query_client(self) -> BulkQueryClient:
+        """Manage query jobs at a low level."""
+        return BulkQueryClient(self)
 
     async def __perform_operation(
         self,
@@ -205,3 +211,39 @@ class BulkClientV2:
             data=data,
             assignment_rule_id=None,
         )
+
+    async def query(
+        self,
+        query: str,
+        include_all_records: bool = False,
+        polling_interval: float = 5.0,
+        max_records: int | None = None,
+    ) -> AsyncIterator[dict[str, str]]:
+        """
+        Execute a Bulk API 2.0 SOQL query.
+
+        Parameters
+        ----------
+        query : str
+            SOQL query.
+        include_all_records : bool, default False
+            If True, includes all (active/deleted/archived) records.
+        polling_interval : float, optional
+            Interval in seconds to poll the query job status.
+            By default 5.0 seconds.
+        max_records : int | None, optional
+            Maximum number of records to request per result page.
+
+        Yields
+        ------
+        dict[str, str]
+            Record as returned in Bulk API CSV results.
+
+        """
+        async for record in self.query_client.perform_query(
+            query=query,
+            include_all_records=include_all_records,
+            polling_interval=polling_interval,
+            max_records=max_records,
+        ):
+            yield record
